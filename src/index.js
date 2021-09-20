@@ -1,4 +1,4 @@
-import { TEXT_ELEMENT } from './constant'
+import { TEXT_ELEMENT, ROOT_FIBER } from './constant'
 
 // 模仿React.createElement
 function createElement(type, props, ...children) {
@@ -28,26 +28,19 @@ function createTextElement(value) {
   }
 }
 
-function render(element, container) {
+function createDom(fiber) {
   // 1.根据element的type去创建的dom
   const dom =
-    element.type === TEXT_ELEMENT
-      ? document.createTextNode(element.props.nodeValue)
-      : document.createElement(element.type)
+    fiber.type === TEXT_ELEMENT
+      ? document.createTextNode(fiber.props.nodeValue)
+      : document.createElement(fiber.type)
 
   // 2. 将element上的props中非children属性添加到dom上
   const isProperty = key => key !== 'children'
-  Object.keys(element.props)
+  Object.keys(fiber.props)
     .filter(isProperty)
-    .forEach(name => (dom[name] = element.props[name]))
-
-  // 3. 递归children
-  element.props.children.forEach(child =>
-    render(child, dom)
-  )
-
-  // 4. 将dom挂载到container上
-  container.appendChild(dom)
+    .forEach(name => (dom[name] = fiber.props[name]))
+  return dom
 }
 
 // 将render工作拆分为多个工作单元去循环执行
@@ -65,8 +58,65 @@ function workLoop(deadline) {
 requestIdleCallback(workLoop)
 
 // 执行一个工作单元
-function performUnitOfWork(nextUnitOfWork) {
-  //TODO
+function performUnitOfWork(fiber) {
+  //1. 添加dom节点
+  if (!fiber.dom) {
+    // 没有dom节点的话 去创建dom节点
+    fiber.dom = createDom(fiber)
+  }
+
+  if (fiber.parent) {
+    // 如果parent节点存在的话 将当前节点挂在parent节点上
+    fiber.parent.dom.appendChild(fiber.dom)
+  }
+
+  // 2. 对当前fiber节点的children生成fiber树
+  let prevSibling = null
+  const children = fiber.props.children
+  children.forEach((child, index) => {
+    const newFiber = {
+      type: child.type,
+      parent: fiber,
+      props: child.props,
+      dom: null,
+    }
+
+    if (index === 0) {
+      // 链接第一个子节点
+      fiber.child = newFiber
+    } else {
+      // 子节点之间使用sibling串联兄弟节点
+      prevSibling.sibling = newFiber
+    }
+    prevSibling = newFiber
+  })
+
+  // 3. return下一个工作单元
+
+  // 有子节点的话 return第一个子节点
+  if (fiber.child) {
+    return fiber.child
+  }
+
+  // 没有子节点 寻找兄弟节点
+  let nextFiber = fiber
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling
+    }
+    nextFiber = nextFiber.parent
+  }
+}
+
+function render(element, container) {
+  nextUnitOfWork = {
+    type: ROOT_FIBER, // 自己定义的一个类型
+    parent: null, // 根Fiber没有parent节点
+    dom: container, // 真实DOM
+    props: {
+      children: [element],
+    },
+  }
 }
 
 const Didact = {
