@@ -1,1 +1,1 @@
-export const TEXT_ELEMENT = 'text_element'
+export const TEXT_ELEMENT = 'TEXT_ELEMENT'
