@@ -1,4 +1,3 @@
-import ReactDom from 'react-dom'
 import { TEXT_ELEMENT } from './constant'
 
 // 模仿React.createElement
@@ -29,8 +28,31 @@ function createTextElement(value) {
   }
 }
 
+function render(element, container) {
+  // 1.根据element的type去创建的dom
+  const dom =
+    element.type === TEXT_ELEMENT
+      ? document.createTextNode(element.props.nodeValue)
+      : document.createElement(element.type)
+
+  // 2. 将element上的props中非children属性添加到dom上
+  const isProperty = key => key !== 'children'
+  Object.keys(element.props)
+    .filter(isProperty)
+    .forEach(name => (dom[name] = element.props[name]))
+
+  // 3. 递归children
+  element.props.children.forEach(child =>
+    render(child, dom)
+  )
+
+  // 4. 将dom挂载到container上
+  container.appendChild(dom)
+}
+
 const Didact = {
   createElement,
+  render,
 }
 /** @jsx Didact.createElement */
 const element = (
@@ -40,4 +62,4 @@ const element = (
   </div>
 )
 const container = document.getElementById('root')
-ReactDom.render(element, container)
+Didact.render(element, container)
