@@ -50,6 +50,25 @@ function render(element, container) {
   container.appendChild(dom)
 }
 
+// 将render工作拆分为多个工作单元去循环执行
+let nextUnitOfWork = null
+function workLoop(deadline) {
+  let shouldYield = false
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+    shouldYield = deadline.timeRemaining() < 1
+  }
+  requestIdleCallback(workLoop)
+}
+
+// 启动首次调用
+requestIdleCallback(workLoop)
+
+// 执行一个工作单元
+function performUnitOfWork(nextUnitOfWork) {
+  //TODO
+}
+
 const Didact = {
   createElement,
   render,
