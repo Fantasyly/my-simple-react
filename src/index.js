@@ -45,11 +45,18 @@ function createDom(fiber) {
 
 // 将render工作拆分为多个工作单元去循环执行
 let nextUnitOfWork = null
+let wipRoot = null // wipRoot表示fiber树的根节点
 function workLoop(deadline) {
   let shouldYield = false
   while (nextUnitOfWork && !shouldYield) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
     shouldYield = deadline.timeRemaining() < 1
+  }
+
+  // 如果没有下一个工作单元了，且wipRoot存在（就是根fiber节点存在）
+  // 此时表示整个dom树都构建好了，可以直接append了
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot()
   }
   requestIdleCallback(workLoop)
 }
@@ -65,10 +72,11 @@ function performUnitOfWork(fiber) {
     fiber.dom = createDom(fiber)
   }
 
-  if (fiber.parent) {
-    // 如果parent节点存在的话 将当前节点挂在parent节点上
-    fiber.parent.dom.appendChild(fiber.dom)
-  }
+  // 移除appendChild的代码
+  // if (fiber.parent) {
+  //   // 如果parent节点存在的话 将当前节点挂在parent节点上
+  //   fiber.parent.dom.appendChild(fiber.dom)
+  // }
 
   // 2. 对当前fiber节点的children生成fiber树
   let prevSibling = null
@@ -108,8 +116,26 @@ function performUnitOfWork(fiber) {
   }
 }
 
+function commitRoot() {
+  //add nodes to DOM
+  commitWork(wipRoot.child)
+  wipRoot = null
+}
+
+function commitWork(fiber) {
+  if (!fiber) return
+
+  // 将当前节点添加上
+  const parentDom = fiber.parent.dom
+  parentDom.appendChild(fiber.dom)
+
+  // 递归子节点
+  commitWork(fiber.child)
+  commitWork(fiber.sibling)
+}
+
 function render(element, container) {
-  nextUnitOfWork = {
+  wipRoot = {
     type: ROOT_FIBER, // 自己定义的一个类型
     parent: null, // 根Fiber没有parent节点
     dom: container, // 真实DOM
@@ -117,6 +143,7 @@ function render(element, container) {
       children: [element],
     },
   }
+  nextUnitOfWork = wipRoot
 }
 
 const Didact = {
