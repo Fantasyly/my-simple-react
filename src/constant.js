@@ -1,2 +1,5 @@
 export const TEXT_ELEMENT = 'TEXT_ELEMENT'
 export const ROOT_FIBER = 'ROOT_FIBER'
+export const PLACEMENT = 'PLACEMENT'
+export const UPDATE = 'UPDATE'
+export const DELETION = 'DELETION'

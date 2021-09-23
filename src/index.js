@@ -1,4 +1,10 @@
-import { TEXT_ELEMENT, ROOT_FIBER } from './constant'
+import {
+  TEXT_ELEMENT,
+  ROOT_FIBER,
+  UPDATE,
+  PLACEMENT,
+  DELETION,
+} from './constant'
 
 // 模仿React.createElement
 function createElement(type, props, ...children) {
@@ -36,16 +42,19 @@ function createDom(fiber) {
       : document.createElement(fiber.type)
 
   // 2. 将element上的props中非children属性添加到dom上
-  const isProperty = key => key !== 'children'
-  Object.keys(fiber.props)
-    .filter(isProperty)
-    .forEach(name => (dom[name] = fiber.props[name]))
+  // const isProperty = key => key !== 'children'
+  // Object.keys(fiber.props)
+  //   .filter(isProperty)
+  //   .forEach(name => (dom[name] = fiber.props[name]))
+  updateDom(dom, {}, fiber.props)
   return dom
 }
 
 // 将render工作拆分为多个工作单元去循环执行
 let nextUnitOfWork = null
 let wipRoot = null // wipRoot表示fiber树的根节点
+let currentRoot = null // 上次commit的fiber树的根节点 也是当年页面已经展示的树的根节点
+let deletions = null // diff时存储要删除的节点
 function workLoop(deadline) {
   let shouldYield = false
   while (nextUnitOfWork && !shouldYield) {
@@ -79,25 +88,7 @@ function performUnitOfWork(fiber) {
   // }
 
   // 2. 对当前fiber节点的children生成fiber树
-  let prevSibling = null
-  const children = fiber.props.children
-  children.forEach((child, index) => {
-    const newFiber = {
-      type: child.type,
-      parent: fiber,
-      props: child.props,
-      dom: null,
-    }
-
-    if (index === 0) {
-      // 链接第一个子节点
-      fiber.child = newFiber
-    } else {
-      // 子节点之间使用sibling串联兄弟节点
-      prevSibling.sibling = newFiber
-    }
-    prevSibling = newFiber
-  })
+  reconcileChildren(fiber, fiber.props.children)
 
   // 3. return下一个工作单元
 
@@ -116,9 +107,81 @@ function performUnitOfWork(fiber) {
   }
 }
 
+/**
+ * @param {*} wipFiber  parent Fiber
+ * @param {*} elements  children
+ */
+function reconcileChildren(wipFiber, elements) {
+  let prevSibling = null
+
+  // 获取oldFiber节点
+  let oldFiber =
+    wipFiber.alternate && wipFiber.alternate.child
+  let index = 0
+  while (index < elements.length || oldFiber) {
+    const child = elements[index]
+    let newFiber = null
+
+    // 新旧fiber树进行diff
+    const isSameType =
+      oldFiber && child && oldFiber.type === child.type
+
+    if (isSameType) {
+      // update node
+      newFiber = {
+        type: oldFiber.type,
+        parent: wipFiber,
+        props: child.props,
+        dom: oldFiber.dom,
+        alternate: oldFiber,
+        effectTag: UPDATE,
+      }
+    }
+
+    if (child && !isSameType) {
+      // add new node
+      newFiber = {
+        type: child.type,
+        parent: wipFiber,
+        props: child.props,
+        dom: null,
+        alternate: null,
+        effectTag: PLACEMENT,
+      }
+    }
+
+    if (oldFiber && !isSameType) {
+      // delete old node
+      deletions.push(oldFiber)
+      oldFiber.effectTag = DELETION
+    }
+
+    // 更新oldFiber
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling
+    }
+
+    if (index === 0) {
+      // 链接第一个子节点
+      wipFiber.child = newFiber
+    } else {
+      // 子节点之间使用sibling串联兄弟节点
+      prevSibling.sibling = newFiber
+    }
+    index++
+    prevSibling = newFiber
+  }
+}
+
 function commitRoot() {
   //add nodes to DOM
+
+  // 对deletions中的节点执行commitWork
+  deletions.forEach(commitWork)
   commitWork(wipRoot.child)
+
+  // 保存当前这次的fiber树
+  currentRoot = wipRoot
   wipRoot = null
 }
 
@@ -127,11 +190,68 @@ function commitWork(fiber) {
 
   // 将当前节点添加上
   const parentDom = fiber.parent.dom
-  parentDom.appendChild(fiber.dom)
+
+  // 根据effectTag进行操作
+
+  // PLACEMENT 添加新节点
+  if (fiber.effectTag === PLACEMENT && fiber.dom) {
+    parentDom.appendChild(fiber.dom)
+  } else if (fiber.effectTag === DELETION) {
+    // 删除节点
+    parentDom.removeChild(fiber.dom)
+  } else if (fiber.effectTag === UPDATE && fiber.dom) {
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props)
+  }
+
+  // parentDom.appendChild(fiber.dom)
 
   // 递归子节点
   commitWork(fiber.child)
   commitWork(fiber.sibling)
+}
+
+const isEvent = key => key.startsWith('on')
+const isProperty = key =>
+  key !== 'children' && !isEvent(key) // 找出非children的属性
+const isNew = (prev, next) => key => prev[key] !== next[key] // 找出prev和next上不一致的属性
+const isGone = (prev, next) => key => !(key in next) // 找出不在next上的
+function updateDom(dom, prevProps, nextProps) {
+  // 移除不用的属性
+  Object.keys(prevProps)
+    .filter(isProperty)
+    .filter(isGone(prevProps, nextProps))
+    .forEach(name => (dom[name] = ''))
+
+  // 移除旧的事件监听
+  Object.keys(prevProps)
+    .filter(isEvent)
+    .filter(
+      key =>
+        !(key in nextProps) ||
+        isNew(prevProps, nextProps)(key)
+    )
+    .forEach(name => {
+      const eventType = name.toLowerCase().substring(2)
+      dom.removeEventListener(eventType, prevProps[name])
+    })
+  // 增加新的事件监听
+  Object.keys(nextProps)
+    .filter(isEvent)
+    .filter(isNew(prevProps, nextProps))
+    .forEach(name => {
+      console.log(name)
+      const eventType = name.toLowerCase().substring(2)
+      dom.addEventListener(eventType, nextProps[name])
+    })
+
+  const a = Object.keys(nextProps).filter(isEvent)
+  console.log(a)
+
+  // 新增属性 新增的 或者 修改的
+  Object.keys(nextProps)
+    .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
+    .forEach(name => (dom[name] = nextProps[name]))
 }
 
 function render(element, container) {
@@ -142,7 +262,9 @@ function render(element, container) {
     props: {
       children: [element],
     },
+    alternate: currentRoot,
   }
+  deletions = []
   nextUnitOfWork = wipRoot
 }
 
@@ -150,12 +272,32 @@ const Didact = {
   createElement,
   render,
 }
+// /** @jsx Didact.createElement */
+// const element = (
+//   <div style="background: salmon">
+//     <h1>Hello World</h1>
+//     <h2 style="text-align:right">from Didact</h2>
+//   </div>
+// )
+// const container = document.getElementById('root')
+// Didact.render(element, container)
+
 /** @jsx Didact.createElement */
-const element = (
-  <div style="background: salmon">
-    <h1>Hello World</h1>
-    <h2 style="text-align:right">from Didact</h2>
-  </div>
-)
 const container = document.getElementById('root')
-Didact.render(element, container)
+
+const updateValue = e => {
+  console.log(e.target.value)
+  rerender(e.target.value)
+}
+
+const rerender = value => {
+  const element = (
+    <div>
+      <input onInput={updateValue} value={value} />
+      <h2>Hello {value}</h2>
+    </div>
+  )
+  Didact.render(element, container)
+}
+
+rerender('World')
