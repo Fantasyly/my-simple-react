@@ -102,10 +102,30 @@ function performUnitOfWork(fiber) {
   }
 }
 
+let wipFiber = null
+let hookIndex = null
 function updateFunctionComponent(fiber) {
+  wipFiber = fiber
+  hookIndex = 0
+  wipFiber.hooks = []
   // 函数组件执行后return的才是children
   const children = [fiber.type(fiber.props)]
   reconcileChildren(fiber, children)
+}
+
+function useState(initial) {
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex]
+
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+  }
+
+  wipFiber.hooks.push(hook)
+  hookIndex++
+  return [hook.state]
 }
 
 function updateHostComponent(fiber) {
@@ -234,7 +254,7 @@ function commitWork(fiber) {
   commitWork(fiber.sibling)
 }
 
-function commitDeletion (fiber, parentDom) {
+function commitDeletion(fiber, parentDom) {
   if (fiber.dom) {
     parentDom.removeChild(fiber.dom)
   } else {
@@ -339,5 +359,5 @@ function App(props) {
   return <h1>Hi {props.name}</h1>
 }
 const element = <App name="foo" />
-const container = document.getElementById("root")
+const container = document.getElementById('root')
 Didact.render(element, container)
