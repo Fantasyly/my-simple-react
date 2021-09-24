@@ -75,20 +75,15 @@ requestIdleCallback(workLoop)
 
 // 执行一个工作单元
 function performUnitOfWork(fiber) {
-  //1. 添加dom节点
-  if (!fiber.dom) {
-    // 没有dom节点的话 去创建dom节点
-    fiber.dom = createDom(fiber)
+  const isFunctionComponent = fiber.type instanceof Function
+
+  if (isFunctionComponent) {
+    // 如果是函数组件 走下面的这个方法
+    updateFunctionComponent(fiber)
+  } else {
+    // 如果不是函数组件 直接走原来的逻辑即可
+    updateHostComponent(fiber)
   }
-
-  // 移除appendChild的代码
-  // if (fiber.parent) {
-  //   // 如果parent节点存在的话 将当前节点挂在parent节点上
-  //   fiber.parent.dom.appendChild(fiber.dom)
-  // }
-
-  // 2. 对当前fiber节点的children生成fiber树
-  reconcileChildren(fiber, fiber.props.children)
 
   // 3. return下一个工作单元
 
@@ -105,6 +100,28 @@ function performUnitOfWork(fiber) {
     }
     nextFiber = nextFiber.parent
   }
+}
+
+function updateFunctionComponent(fiber) {
+  // 函数组件执行后return的才是children
+  const children = [fiber.type(fiber.props)]
+  reconcileChildren(fiber, children)
+}
+
+function updateHostComponent(fiber) {
+  if (!fiber.dom) {
+    // 没有dom节点的话 去创建dom节点
+    fiber.dom = createDom(fiber)
+  }
+
+  // 移除appendChild的代码
+  // if (fiber.parent) {
+  //   // 如果parent节点存在的话 将当前节点挂在parent节点上
+  //   fiber.parent.dom.appendChild(fiber.dom)
+  // }
+
+  // 2. 对当前fiber节点的children生成fiber树
+  reconcileChildren(fiber, fiber.props.children)
 }
 
 /**
@@ -188,8 +205,14 @@ function commitRoot() {
 function commitWork(fiber) {
   if (!fiber) return
 
+  // 获取parentDom
+  let parentFiber = fiber.parent
+  while (!parentFiber.dom) {
+    parentFiber = parentFiber.parent
+  }
+
   // 将当前节点添加上
-  const parentDom = fiber.parent.dom
+  const parentDom = parentFiber.dom
 
   // 根据effectTag进行操作
 
@@ -198,7 +221,8 @@ function commitWork(fiber) {
     parentDom.appendChild(fiber.dom)
   } else if (fiber.effectTag === DELETION) {
     // 删除节点
-    parentDom.removeChild(fiber.dom)
+    // parentDom.removeChild(fiber.dom)
+    commitDeletion(fiber.dom, parentDom)
   } else if (fiber.effectTag === UPDATE && fiber.dom) {
     updateDom(fiber.dom, fiber.alternate.props, fiber.props)
   }
@@ -208,6 +232,14 @@ function commitWork(fiber) {
   // 递归子节点
   commitWork(fiber.child)
   commitWork(fiber.sibling)
+}
+
+function commitDeletion (fiber, parentDom) {
+  if (fiber.dom) {
+    parentDom.removeChild(fiber.dom)
+  } else {
+    commitDeletion(fiber.child, parentDom)
+  }
 }
 
 const isEvent = key => key.startsWith('on')
@@ -283,21 +315,29 @@ const Didact = {
 // Didact.render(element, container)
 
 /** @jsx Didact.createElement */
-const container = document.getElementById('root')
+// const container = document.getElementById('root')
 
-const updateValue = e => {
-  console.log(e.target.value)
-  rerender(e.target.value)
+// const updateValue = e => {
+//   console.log(e.target.value)
+//   rerender(e.target.value)
+// }
+
+// const rerender = value => {
+//   const element = (
+//     <div>
+//       <input onInput={updateValue} value={value} />
+//       <h2>Hello {value}</h2>
+//     </div>
+//   )
+//   Didact.render(element, container)
+// }
+
+// rerender('World')
+
+/** @jsx Didact.createElement */
+function App(props) {
+  return <h1>Hi {props.name}</h1>
 }
-
-const rerender = value => {
-  const element = (
-    <div>
-      <input onInput={updateValue} value={value} />
-      <h2>Hello {value}</h2>
-    </div>
-  )
-  Didact.render(element, container)
-}
-
-rerender('World')
+const element = <App name="foo" />
+const container = document.getElementById("root")
+Didact.render(element, container)
