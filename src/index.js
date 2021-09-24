@@ -121,11 +121,28 @@ function useState(initial) {
 
   const hook = {
     state: oldHook ? oldHook.state : initial,
+    queue: [],
+  }
+
+  const actions = oldHook ? oldHook.queue : []
+  actions.forEach(action => {
+    hook.state = action(hook.state)
+  })
+
+  const setState = action => {
+    hook.queue.push(action)
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    }
+    deletions = []
+    nextUnitOfWork = wipRoot
   }
 
   wipFiber.hooks.push(hook)
   hookIndex++
-  return [hook.state]
+  return [hook.state, setState]
 }
 
 function updateHostComponent(fiber) {
@@ -323,6 +340,7 @@ function render(element, container) {
 const Didact = {
   createElement,
   render,
+  useState
 }
 // /** @jsx Didact.createElement */
 // const element = (
@@ -355,9 +373,22 @@ const Didact = {
 // rerender('World')
 
 /** @jsx Didact.createElement */
-function App(props) {
-  return <h1>Hi {props.name}</h1>
+// function App(props) {
+//   return <h1>Hi {props.name}</h1>
+// }
+// const element = <App name="foo" />
+// const container = document.getElementById('root')
+// Didact.render(element, container)
+
+/** @jsx Didact.createElement */
+function Counter() {
+  const [state, setState] = Didact.useState(1)
+  return (
+    <h1 onClick={() => setState(c => c + 1)}>
+      Count: {state}
+    </h1>
+  )
 }
-const element = <App name="foo" />
+const element = <Counter />
 const container = document.getElementById('root')
 Didact.render(element, container)
